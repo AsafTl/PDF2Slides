@@ -125,8 +125,11 @@ class SlideAnalyzer:
         ocr_predictions = run_ocr([img_pil], [["en"]], self.det_model, self.det_processor, self.rec_model, self.rec_processor)
         ocr_result = ocr_predictions[0]
         
+        img_h, img_w = img_bgr.shape[:2]
         slide_output = {
             "slide_index": slide_index,
+            "image_width": img_w,
+            "image_height": img_h,
             "background_color": "#FFFFFF",
             "elements": []
         }
