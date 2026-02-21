@@ -200,7 +200,10 @@ class SlideAnalyzer:
                     }
                     slide_output["elements"].append(element)
                 
-        # 4. Estimate background color
+        # 4. Merge nearby text elements that likely belong together
+        slide_output["elements"] = self._merge_nearby_text_blocks(slide_output["elements"])
+
+        # 5. Estimate background color
         try:
             bg_color = self._extract_background_color(img_bgr, all_bboxes)
             slide_output["background_color"] = bg_color
@@ -208,3 +211,75 @@ class SlideAnalyzer:
             logger.warning(f"Failed to extract background color for {image_path}: {e}")
             
         return slide_output
+    def _merge_nearby_text_blocks(self, elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Post-processing step: merges adjacent text elements that are vertically
+        close and horizontally overlapping into a single element.
+
+        Two text blocks are merged when:
+          - The vertical gap between them is less than 1.5x the height of the
+            upper block (a loose line-spacing heuristic).
+          - They horizontally overlap by at least 20% of the narrower block's width.
+        """
+        text_types = {"text", "title"}
+        texts = [el for el in elements if el["type"] in text_types]
+        others = [el for el in elements if el["type"] not in text_types]
+
+        if len(texts) < 2:
+            return elements
+
+        # Sort top-to-bottom, then left-to-right
+        texts.sort(key=lambda el: (el["bbox"][1], el["bbox"][0]))
+
+        # Track original line heights so the 1.5× threshold never "grows" after merging
+        orig_heights = [el["bbox"][3] for el in texts]
+
+        merged = [texts[0]]
+        merged_heights = [orig_heights[0]]  # parallel list: original height of the topmost block
+
+        for i, curr in enumerate(texts[1:], start=1):
+            prev = merged[-1]
+            px, py, pw, ph = prev["bbox"]
+            cx, cy, cw, ch = curr["bbox"]
+
+            # Vertical gap between bottom of prev and top of curr
+            prev_bottom = py + ph
+            v_gap = cy - prev_bottom
+
+            # Horizontal overlap
+            h_overlap = min(px + pw, cx + cw) - max(px, cx)
+            min_width = min(pw, cw)
+            h_overlap_ratio = h_overlap / min_width if min_width > 0 else 0
+
+            # Use the ORIGINAL height of the current block (not the grown merged height)
+            # to prevent the threshold from cascading: 1.5 × original line height
+            orig_h = orig_heights[i]
+            MAX_GAP_PX = 300
+
+            # Guard: font sizes should be within 2× of each other
+            prev_size = prev.get("estimated_size", 12)
+            curr_size = curr.get("estimated_size", 12)
+            size_ratio = max(prev_size, curr_size) / max(min(prev_size, curr_size), 1)
+
+            # Merge condition: use orig_h (current block height) as the line-spacing reference
+            if v_gap < orig_h * 1.5 and v_gap < MAX_GAP_PX and h_overlap_ratio > 0.20 and size_ratio < 2.0:
+
+                # Expand the previous block to encompass both
+                new_x = min(px, cx)
+                new_y = py
+                new_w = max(px + pw, cx + cw) - new_x
+                new_h = (cy + ch) - py
+                merged_text = prev["text"].rstrip() + " " + curr["text"].lstrip()
+                # Keep the dominant type (title beats text)
+                merged_type = "title" if prev["type"] == "title" or curr["type"] == "title" else "text"
+                prev["bbox"] = [new_x, new_y, new_w, new_h]
+                prev["text"] = merged_text.strip()
+                prev["type"] = merged_type
+                prev["is_bold"] = prev.get("is_bold") or curr.get("is_bold", False)
+                # estimated_size: keep the larger (typically the title's)
+                prev["estimated_size"] = max(prev.get("estimated_size", 12), curr.get("estimated_size", 12))
+            else:
+                merged.append(curr)
+                merged_heights.append(orig_heights[i])
+
+        return others + merged
