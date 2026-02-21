@@ -141,7 +141,10 @@ class SlideAnalyzer:
         ocr_lines = []
         for line in ocr_result.text_lines:
             ocr_lines.append({"bbox": get_bbox(line.polygon), "text": line.text})
-            
+
+        # Track which OCR lines have been claimed by a Text/Title/Caption layout block
+        claimed_line_indices: set = set()
+        
         for block_idx, block in enumerate(layout_result.bboxes):
             x1, y1, x2, y2 = get_bbox(block.polygon)
             block_type = block.label
@@ -157,7 +160,7 @@ class SlideAnalyzer:
                 block_text = []
                 text_area_covered = 0
                 
-                for line in ocr_lines:
+                for line_idx, line in enumerate(ocr_lines):
                     l_bbox = line["bbox"]
                     inter = self._get_intersection(sb, l_bbox)
                     l_area = (l_bbox[2]-l_bbox[0]) * (l_bbox[3]-l_bbox[1])
@@ -165,6 +168,9 @@ class SlideAnalyzer:
                     if l_area > 0 and inter / l_area > 0.4:
                         block_text.append(line["text"])
                         text_area_covered += inter
+                        # Mark line as claimed only for semantic text blocks
+                        if block_type in ["Text", "Title", "List", "Caption", "Formula"]:
+                            claimed_line_indices.add(line_idx)
                 
                 text_coverage_ratio = text_area_covered / sb_area
                 w = sb_x2 - sb_x1
@@ -200,7 +206,27 @@ class SlideAnalyzer:
                     }
                     slide_output["elements"].append(element)
                 
-        # 4. Merge nearby text elements that likely belong together
+        # 4. Rescue unclaimed OCR lines — text inside Surya's Figure/Table regions
+        #    that was never matched to a Text layout block.
+        #    Only emit lines with meaningful content (avoids rescuing single letters / noise).
+        for line_idx, line in enumerate(ocr_lines):
+            if line_idx in claimed_line_indices:
+                continue
+            text = line["text"].strip()
+            # Heuristic: at least 3 words OR 10 characters to qualify as real text
+            word_count = len(text.split())
+            if word_count >= 3 or len(text) >= 10:
+                l_bbox = line["bbox"]
+                lx1, ly1, lx2, ly2 = l_bbox
+                slide_output["elements"].append({
+                    "type": "text",
+                    "text": text,
+                    "bbox": [lx1, ly1, lx2 - lx1, ly2 - ly1],
+                    "estimated_size": max(12, ly2 - ly1),
+                    "is_bold": False
+                })
+
+        # 5. Merge nearby text elements that likely belong together
         slide_output["elements"] = self._merge_nearby_text_blocks(slide_output["elements"])
 
         # 5. Estimate background color
