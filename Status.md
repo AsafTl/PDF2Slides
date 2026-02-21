@@ -1,0 +1,19 @@
+# Project Status
+- **Phase 1: Input Processing & Preparation** - `DONE`
+  - Created Python virtual environment.
+  - Installed PyMuPDF, Pillow, pytest.
+  - Implemented `PDFProcessor` to rasterize PDFs to 300 DPI high-res lossless PNGs and extract metadata.
+  - Created unit tests and verified working functionalities.
+- **Phase 2: The Analysis Engine** - `DONE`
+  - **Replaced PaddleOCR/LayoutParser with `surya-ocr`** (layoutparser weights were defunct on Windows).
+  - Built `SlideAnalyzer` using Surya's layout detection + OCR models.
+  - Implemented a **hybrid OpenCV contour splitter** (`_split_into_sub_blocks`) to break Surya's monolithic Figure/Table regions into individual sub-panels.
+  - Text blocks (Text, Title, Caption, List) bypass the splitter and use Surya's bounds directly, with OCR lines mapped via IoU matching.
+  - Implemented dominant background color extraction using `cv2`.
+  - Verified output on real slides (`page_002.png`, `page_004.png`): correct text, figures, and background color.
+  - All unit tests passing.
+- **Phase 3: PPTX Generation & Reconstruction** - `DONE`
+  - `PPTXBuilder` implemented: EMU conversion, slide sizing, background fill, figure placement, text boxes.
+  - `src/pipeline.py` implemented: chains Phase 1 → 2 → 3, saves IR JSON, runs CLI with argparse, cleans up staging.
+  - End-to-end pipeline verified on all 18 pages of `CRATERs_Blueprint_for_Immunotherapy_Success.pdf`.
+  - Output: `tests/CRATERs_output.pptx` and `CRATERs_Blueprint_for_Immunotherapy_Success_ir.json`.

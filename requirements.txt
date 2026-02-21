@@ -1,0 +1,12 @@
+PyMuPDF>=1.23.0
+Pillow>=10.0.0
+pytest==8.4.2
+pytest-dependency==0.6.0
+python-pptx==1.0.2
+surya-ocr>=0.6.2
+eval_type_backport
+transformers<4.41.0
+torch
+torchvision
+easyocr
+numpy<2.0.0

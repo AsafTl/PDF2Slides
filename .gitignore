@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific: staging / generated files
+*_staging/
+*_ir.json
+tests/craters/
+tests/craters_staging/
+tests/craters_pipeline_staging/
+tests/CRATERs_output.pptx
+
+# Keep test input PDF
+!tests/CRATERs_Blueprint_for_Immunotherapy_Success.pdf
+
+# Model weights / HuggingFace cache (can be large)
+.cache/
+*.bin
+*.pt
+*.pth
+*.pth.tar
+*.tar
+*.tar.gz
+*.onnx
+
+# Debug/temp pytest output text files
+pytest_err.txt
+pytest_err_utf8.txt
+pytest_out.txt
+pytest_stdout.txt
