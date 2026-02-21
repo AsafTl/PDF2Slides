@@ -156,26 +156,32 @@ class SlideAnalyzer:
                 sb_area = max(1, (sb_x2 - sb_x1) * (sb_y2 - sb_y1))
                 all_bboxes.append(sb)
                 
-                # Intersect text
+                # Intersect OCR lines with this sub-block
                 block_text = []
                 text_area_covered = 0
-                
+                line_heights = []  # track actual OCR line heights for font size estimation
+
                 for line_idx, line in enumerate(ocr_lines):
                     l_bbox = line["bbox"]
                     inter = self._get_intersection(sb, l_bbox)
                     l_area = (l_bbox[2]-l_bbox[0]) * (l_bbox[3]-l_bbox[1])
-                    
+
                     if l_area > 0 and inter / l_area > 0.4:
                         block_text.append(line["text"])
                         text_area_covered += inter
+                        line_heights.append(l_bbox[3] - l_bbox[1])
                         # Mark line as claimed only for semantic text blocks
                         if block_type in ["Text", "Title", "List", "Caption", "Formula"]:
                             claimed_line_indices.add(line_idx)
-                
+
                 text_coverage_ratio = text_area_covered / sb_area
                 w = sb_x2 - sb_x1
                 h = sb_y2 - sb_y1
-                
+
+                # min(h, w) gives the shorter side of the text bbox, which approximates
+                # the actual glyph/font height for both horizontal AND vertical text.
+                estimated_size = max(12, min(h, w))
+
                 if block_type in ["Text", "Title", "List", "Caption", "Formula"] or (block_type == "Table" and len(block_text) > 0 and text_coverage_ratio > 0.05):
                     raw_text = " ".join(block_text).strip()
                     if raw_text:
@@ -183,11 +189,11 @@ class SlideAnalyzer:
                             "type": "title" if block_type == "Title" else "text",
                             "text": raw_text,
                             "bbox": [sb_x1, sb_y1, w, h],
-                            "estimated_size": max(12, int(h / max(1, len(block_text)))),
+                            "estimated_size": estimated_size,
                             "is_bold": True if block_type == "Title" else False
                         }
                         slide_output["elements"].append(element)
-                        
+    
                 elif block_type in ["Figure", "Picture", "Table"]:
                     if w <= 50 or h <= 50:
                         continue
@@ -209,22 +215,43 @@ class SlideAnalyzer:
         # 4. Rescue unclaimed OCR lines — text inside Surya's Figure/Table regions
         #    that was never matched to a Text layout block.
         #    Only emit lines with meaningful content (avoids rescuing single letters / noise).
+        #    Skip lines that overlap with an already-emitted text element (deduplication).
+        emitted_text_bboxes = [
+            [el["bbox"][0], el["bbox"][1],
+             el["bbox"][0] + el["bbox"][2], el["bbox"][1] + el["bbox"][3]]
+            for el in slide_output["elements"] if el["type"] in ("text", "title")
+        ]
+
         for line_idx, line in enumerate(ocr_lines):
             if line_idx in claimed_line_indices:
                 continue
             text = line["text"].strip()
             # Heuristic: at least 3 words OR 10 characters to qualify as real text
             word_count = len(text.split())
-            if word_count >= 3 or len(text) >= 10:
-                l_bbox = line["bbox"]
-                lx1, ly1, lx2, ly2 = l_bbox
-                slide_output["elements"].append({
-                    "type": "text",
-                    "text": text,
-                    "bbox": [lx1, ly1, lx2 - lx1, ly2 - ly1],
-                    "estimated_size": max(12, ly2 - ly1),
-                    "is_bold": False
-                })
+            if not (word_count >= 3 or len(text) >= 10):
+                continue
+            l_bbox = line["bbox"]
+            lx1, ly1, lx2, ly2 = l_bbox
+            l_area = max(1, (lx2 - lx1) * (ly2 - ly1))
+
+            # Skip if this line already has substantial overlap with an emitted text element
+            duplicate = False
+            for em in emitted_text_bboxes:
+                inter = self._get_intersection(l_bbox, em)
+                if inter / l_area > 0.4:
+                    duplicate = True
+                    break
+            if duplicate:
+                continue
+
+            line_h = min(ly2 - ly1, lx2 - lx1)  # shorter side ≈ font height
+            slide_output["elements"].append({
+                "type": "text",
+                "text": text,
+                "bbox": [lx1, ly1, lx2 - lx1, line_h],
+                "estimated_size": max(12, line_h),
+                "is_bold": False
+            })
 
         # 5. Merge nearby text elements that likely belong together
         slide_output["elements"] = self._merge_nearby_text_blocks(slide_output["elements"])
