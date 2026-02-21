@@ -178,9 +178,10 @@ class SlideAnalyzer:
                 w = sb_x2 - sb_x1
                 h = sb_y2 - sb_y1
 
-                # min(h, w) gives the shorter side of the text bbox, which approximates
-                # the actual glyph/font height for both horizontal AND vertical text.
-                estimated_size = max(12, min(h, w))
+                # min(h, w) gives the shorter dimension (≈ single-line glyph height).
+                # Divide by the number of captured text lines to get per-line height.
+                n_lines = max(1, len(block_text))
+                estimated_size = max(12, min(h, w) // n_lines)
 
                 if block_type in ["Text", "Title", "List", "Caption", "Formula"] or (block_type == "Table" and len(block_text) > 0 and text_coverage_ratio > 0.05):
                     raw_text = " ".join(block_text).strip()
@@ -216,10 +217,12 @@ class SlideAnalyzer:
         #    that was never matched to a Text layout block.
         #    Only emit lines with meaningful content (avoids rescuing single letters / noise).
         #    Skip lines that overlap with an already-emitted text element (deduplication).
-        emitted_text_bboxes = [
+        # Build bboxes for ALL already-emitted elements (text + figure crops).
+        # This blocks both title-text duplication and text-inside-figure-image rescue.
+        all_emitted_bboxes = [
             [el["bbox"][0], el["bbox"][1],
              el["bbox"][0] + el["bbox"][2], el["bbox"][1] + el["bbox"][3]]
-            for el in slide_output["elements"] if el["type"] in ("text", "title")
+            for el in slide_output["elements"]
         ]
 
         for line_idx, line in enumerate(ocr_lines):
@@ -234,9 +237,10 @@ class SlideAnalyzer:
             lx1, ly1, lx2, ly2 = l_bbox
             l_area = max(1, (lx2 - lx1) * (ly2 - ly1))
 
-            # Skip if this line already has substantial overlap with an emitted text element
+            # Skip if this line overlaps substantially with any already-emitted element
+            # (text block → avoids duplication; figure crop → avoids rescuing in-image text)
             duplicate = False
-            for em in emitted_text_bboxes:
+            for em in all_emitted_bboxes:
                 inter = self._get_intersection(l_bbox, em)
                 if inter / l_area > 0.4:
                     duplicate = True
