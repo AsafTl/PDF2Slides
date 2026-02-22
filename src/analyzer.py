@@ -124,6 +124,7 @@ class SlideAnalyzer:
         # 3. Perform full-page OCR
         ocr_predictions = run_ocr([img_pil], [["en"]], self.det_model, self.det_processor, self.rec_model, self.rec_processor)
         ocr_result = ocr_predictions[0]
+        #print(ocr_result.text_lines)
         
         img_h, img_w = img_bgr.shape[:2]
         slide_output = {
@@ -168,7 +169,8 @@ class SlideAnalyzer:
                     l_bbox = line["bbox"]
                     inter = self._get_intersection(sb, l_bbox)
                     l_area = (l_bbox[2]-l_bbox[0]) * (l_bbox[3]-l_bbox[1])
-
+                    #print(line["text"])
+                   # print(inter/l_area)
                     if l_area > 0 and inter / l_area > 0.4:
                         block_text.append(line["text"])
                         text_area_covered += inter
@@ -187,16 +189,32 @@ class SlideAnalyzer:
                 estimated_size = max(12, min(h, w) // n_lines)
 
                 if block_type in ["Text", "Title", "List", "Caption", "Formula"] or (block_type == "Table" and len(block_text) > 0 and text_coverage_ratio > 0.05):
-                    raw_text = " ".join(block_text).strip()
-                    if raw_text:
-                        element = {
-                            "type": "title" if block_type == "Title" else "text",
-                            "text": raw_text,
-                            "bbox": [sb_x1, sb_y1, w, h],
-                            "estimated_size": estimated_size,
-                            "is_bold": True if block_type == "Title" else False
-                        }
-                        slide_output["elements"].append(element)
+                    # Vertical text (h > w): rotated y-axis labels — render as image
+                    # to avoid font-size estimation errors for rotated glyphs.
+                    if h > w and w > 20 and h > 20:
+                        #print("No text found in block")   
+                        crop_bgr = img_bgr[sb_y1:sb_y2, sb_x1:sb_x2]
+                        base_name = os.path.basename(image_path).split('.')[0]
+                        fig_name = f"{base_name}_fig_{block_idx}_{sub_idx}_vtext.png"
+                        fig_path = os.path.join(self.output_dir, fig_name)
+                        cv2.imwrite(fig_path, crop_bgr)
+                        slide_output["elements"].append({
+                            "type": "figure",
+                            "source_file": fig_path,
+                            "bbox": [sb_x1, sb_y1, w, h]
+                        })
+                    else:
+                        raw_text = " ".join(block_text).strip()
+                        if raw_text:
+                            element = {
+                                "type": "title" if block_type == "Title" else "text",
+                                "text": raw_text,
+                                "bbox": [sb_x1, sb_y1, w, h],
+                                "estimated_size": estimated_size,
+                                "is_bold": True if block_type == "Title" else False
+                            }
+                            slide_output["elements"].append(element)
+
     
                 elif block_type in ["Figure", "Picture", "Table"]:
                     if w <= 50 or h <= 50:
@@ -232,6 +250,7 @@ class SlideAnalyzer:
             if line_idx in claimed_line_indices:
                 continue
             text = line["text"].strip()
+            #print(text)
             # Heuristic: at least 3 words OR 10 characters to qualify as real text
             word_count = len(text.split())
             if not (word_count >= 3 or len(text) >= 10):
@@ -252,13 +271,26 @@ class SlideAnalyzer:
                 continue
 
             line_h = min(ly2 - ly1, lx2 - lx1)  # shorter side ≈ font height
-            slide_output["elements"].append({
-                "type": "text",
-                "text": text,
-                "bbox": [lx1, ly1, lx2 - lx1, line_h],
-                "estimated_size": max(12, line_h),
-                "is_bold": False
-            })
+            if line_h==lx2 - lx1:
+                crop_bgr = img_bgr[ly1:ly2, lx1:lx2]
+                base_name = os.path.basename(image_path).split('.')[0]
+                fig_name = f"{base_name}_fig_{block_idx}_{sub_idx}_vtext.png"
+                fig_path = os.path.join(self.output_dir, fig_name)
+                cv2.imwrite(fig_path, crop_bgr)
+                slide_output["elements"].append({
+                    "type": "figure",
+                    "source_file": fig_path,
+                    "bbox": [lx1, ly1, lx2 - lx1, line_h]
+                })
+            else:
+                slide_output["elements"].append({
+                    "type": "text",
+                    "text": text,
+                    "bbox": [lx1, ly1, lx2 - lx1, line_h],
+                    "estimated_size": max(12, line_h),
+                    "is_bold": False
+                })
+        #print(slide_output["elements"])
 
         # 5. Merge nearby text elements that likely belong together
         slide_output["elements"] = self._merge_nearby_text_blocks(slide_output["elements"])
