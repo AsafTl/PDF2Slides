@@ -17,3 +17,12 @@
   - `src/pipeline.py` implemented: chains Phase 1 → 2 → 3, saves IR JSON, runs CLI with argparse, cleans up staging.
   - End-to-end pipeline verified on all 18 pages of `CRATERs_Blueprint_for_Immunotherapy_Success.pdf`.
   - Output: `tests/CRATERs_output.pptx` and `CRATERs_Blueprint_for_Immunotherapy_Success_ir.json`.
+- **Phase 4: Slide-by-Slide Verification and PPTX Repair** - `DONE`
+  - Performed a visual layout check and automated COM repair for all 18 slides in `tests/CRATERs_output_v4.pptx`.
+  - Replaced embedded Y-axis image texts with editable, native, rotated PowerPoint text boxes on charts (Slides 6, 7, 9, 12, 15).
+  - Fixed OCR merging issues, separated missing diagram labels, restored bulleted lists that were interpreted as image fragments, added missing labels (Slides 7, 8, 12, 13, 14, 16, 17).
+  - Re-aligned titles and text blocks that overlapped images or wrapped poorly. 
+  - Verified and restored the 'NotebookLM' attribution text on every slide.
+
+- **Documentation** - `DONE`
+  - Created a comprehensive `README.md` summarizing the core functionalities, installation steps, and CLI usage to prepare the repository for GitHub publishing.

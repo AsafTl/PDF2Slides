@@ -55,3 +55,16 @@ pytest_err.txt
 pytest_err_utf8.txt
 pytest_out.txt
 pytest_stdout.txt
+
+# Exclude testing, scripts, and agent files for clean public release
+tests/
+scripts/
+powerpoint-mcp/
+.agent/
+.agents/
+
+# Exclude local presentations and output texts
+*.pdf
+*.pptx
+text_comparison.txt
+
